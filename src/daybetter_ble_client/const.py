@@ -6,16 +6,16 @@ from bleak.uuids import normalize_uuid_16
 # includes Device Name characteristic
 SERVICE_GENERIC_ACCESS_PROFILE = normalize_uuid_16(0x1800)
 # read
-CHAR_DEVICE_NAME = normalize_uuid_16(0x2a00)
+CHAR_DEVICE_NAME = normalize_uuid_16(0x2A00)
 
-SERVICE_LED_CONTROL = normalize_uuid_16(0xe031)
+SERVICE_LED_CONTROL = normalize_uuid_16(0xE031)
 # write
-CHAR_LED_CONTROL = normalize_uuid_16(0xa031)
+CHAR_LED_CONTROL = normalize_uuid_16(0xA031)
 # "read", notify
-CHAR_LED_STATUS = normalize_uuid_16(0xf031)
+CHAR_LED_STATUS = normalize_uuid_16(0xF031)
 
 # Advertised service
-SERVICE_DISCOVERY = normalize_uuid_16(0xc031)
+SERVICE_DISCOVERY = normalize_uuid_16(0xC031)
 
 
 @dataclass(frozen=True)
@@ -29,10 +29,18 @@ class DeviceProfile:
     variant: bytes = b""
 
 
-P031 = DeviceProfile("P031", SERVICE_DISCOVERY, SERVICE_LED_CONTROL,
-                     CHAR_LED_CONTROL, CHAR_LED_STATUS)
-P065 = DeviceProfile("P065", normalize_uuid_16(0xc065), normalize_uuid_16(0xe065),
-                     normalize_uuid_16(0xa065), normalize_uuid_16(0xf065), True, b"\xff")
+P031 = DeviceProfile(
+    "P031", SERVICE_DISCOVERY, SERVICE_LED_CONTROL, CHAR_LED_CONTROL, CHAR_LED_STATUS
+)
+P065 = DeviceProfile(
+    "P065",
+    normalize_uuid_16(0xC065),
+    normalize_uuid_16(0xE065),
+    normalize_uuid_16(0xA065),
+    normalize_uuid_16(0xF065),
+    True,
+    b"\xff",
+)
 DEVICE_PROFILES = (P031, P065)
 SUPPORTED_DISCOVERY_SERVICES = tuple(p.discovery_service for p in DEVICE_PROFILES)
 
@@ -41,6 +49,7 @@ COMMAND_BRIGHTNESS = 0x13
 COMMAND_EFFECT = 0x12
 COMMAND_POWER = 0x11
 COMMAND_COLOR = 0x15
+
 
 @unique
 class Effect(IntEnum):
