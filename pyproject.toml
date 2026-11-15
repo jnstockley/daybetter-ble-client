@@ -11,7 +11,7 @@ authors = [
     { name = "Jack Stockley", email = "jack@jstockley.com" },
 ]
 dependencies = [
-    "bleak>=3.1.0,<4",
+    "bleak>=3.0.2,<4",
     "bleak-retry-connector>=4.7.1,<5",
 ]
 
