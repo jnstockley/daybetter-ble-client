@@ -76,6 +76,9 @@ the compatibility default is P031. If the device disconnects, it will not
 automatically reconnect; call `.update_device` again with a freshly scanned
 device, or `.connect` to retry the stored device. P065 authenticates on every
 connection, and initialization failures raise an exception after cleanup.
+Connection setup now also requests and waits for initial device state. A missing
+or invalid status response raises `TimeoutError` after cleanup instead of leaving
+a newly connected device with unknown values.
 
 ```python
 import asyncio
@@ -115,6 +118,47 @@ discoverable to avoid changing an unintended device.
 
 This package was created [for use in Home Assistant](https://github.com/grimsteel/homeassistant-daybetter-led-strip), which may explain some of the API choices.
 
+### State reads and Home Assistant polling
+
+After `update_device()` or `connect()` succeeds with `connected == True`, the
+initial status snapshot has been applied. To reconcile changes made through the
+IR remote or another controller, call:
+
+```python
+await led_strip.async_refresh_state(timeout=5.0)
+print(led_strip.power, led_strip.brightness, led_strip.color, led_strip.effect)
+```
+
+This method requires an existing connection and returns `None` once a validated
+status packet has updated the attributes and notified `on_change` listeners.
+It raises `TimeoutError` if no valid response arrives within the deadline, and
+`BleakError` on a write failure or disconnect. The timeout covers waiting for
+other operations, writing the request, and waiting for its response. Reads and
+control writes are serialized. Cancelling a read releases its resources without
+closing an otherwise healthy connection. Reconnect explicitly after a disconnect.
+
+The library does not start a polling task. In Home Assistant, call this method
+from the coordinator's `_async_update_data()` and configure `update_interval`
+there. Keep `on_change` subscribed for immediate notification updates. Copying
+cached attributes alone does not poll the device. Propagate failed reads to the
+coordinator so old cached values are not reported as a successful refresh.
+
+Status snapshots expose brightness in 0–100 and raw device RGB in 0–255. Static
+RGB mode (`effect_id == 1`) has `effect is None`; effects have `color is None`.
+Unrecognized presets have `effect is None` and their numeric ID in `effect_id`,
+so they can be distinguished from static mode. `raw_status` contains the full
+14-byte status payload. `last_state_update` is the event loop's monotonic time
+of the last validated status snapshot, initially `None`; acknowledgements do not
+advance it. Cached state remains available on disconnect and must be treated as
+historical while `connected` is false.
+
+Existing setters retain their acknowledgement-based estimates. `set_color()`
+defaults to gamma/channel correction, so a later device snapshot can report RGB
+different from the originally requested tuple. The correction is lossy and is
+not inverted. Use `color_correction=False` when sending raw device RGB. A fresh
+snapshot supersedes pending estimates; acknowledgements alone do not verify the
+reported state or visible output.
+
 ## Protocol
 
 Communication with the LED strip is done over BLE.
@@ -146,7 +190,8 @@ effect IDs have not been individually tested. P031's original command format is
 covered by regression tests; a fresh P031 hardware check could not be completed
 during this change because the device was not consistently discoverable.
 
-The LED control service has a read characteristic (`0xf031`) and a write characteristic (`0xa031`). As far as I can tell, the read characteristic cannot actually be read directly. Rather, if notifications are enabled on this service, the device will push updates about its state at various times.
+State is requested through the write characteristic and returned through status
+notifications. `async_refresh_state()` does not use a GATT characteristic read.
 
 ### Write Data Format
 
@@ -186,9 +231,24 @@ When any of the above write commands are written to the characteristic successfu
 
 For instance, the above color command would result in `A1 15 04 01 F1 1C`
 
-When the strip is turned on/off from the IR remote, a message with command ID `0x10` and the payload `00 01 01 64 32 32 ff 31 2d f0 00 00 00 00` (off) or `01 01 01 64 32 32 ff 31 2d f0 00 00 00 00`. The first byte indicates the on/off status, but I don't know what the rest means. It seems unrelated to the color of the light.
+Get-status requests and IR power changes return command `0x10` with a 14-byte
+payload (19 bytes including header and CRC):
 
-Running the "get status" command also results in this being sent.
+| Payload offset | Meaning |
+|----------------|---------|
+| 0 | Power: 0 off, 1 on |
+| 1 | Preset/effect ID; 1 is static RGB |
+| 3 | Brightness, 0–100 |
+| 6–8 | Raw RGB channels, meaningful as the current color in static mode |
+| Other bytes | Preserved in `raw_status`, not interpreted |
+
+The shared layout is based on the P031 reference parser in
+`icub3d/dotfiles/helpers/ledstrip.py` and the earlier local P065 status checks.
+Full refresh behavior is covered by offline fixtures for both profiles; this
+change has not been freshly validated against physical P031 or P065 hardware.
+All notification frames, including acknowledgements, are checked for direction,
+length and CRC before use. Invalid status values are ignored, allowing a pending
+read to time out instead of publishing corrupt state.
 
 ### Effects
 
