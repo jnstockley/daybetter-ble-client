@@ -1,39 +1,70 @@
-# daybetter-led-strip
+# daybetter-ble-client
 
-![GitHub License](https://img.shields.io/github/license/grimsteel/daybetter-led-strip)
-![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/grimsteel/daybetter-led-strip/release.yml)
-[![PyPI - Version](https://img.shields.io/pypi/v/daybetter-led-strip)](https://pypi.org/project/daybetter-led-strip)
+![GitHub License](https://img.shields.io/github/license/jnstockley/daybetter-led-strip)
+![CI](https://img.shields.io/github/actions/workflow/status/jnstockley/daybetter-led-strip/ci-cd.yml)
 
+Async Python control for Daybetter P031 and P065 RGB LED strips over Bluetooth
+Low Energy, using [Bleak](https://bleak.readthedocs.io/en/latest/). Requires
+Python 3.11–3.15. Models are detected from advertised services, with device names
+as a fallback.
 
-Python package to control Daybetter RGB LED strips over BLE. Uses [`bleak`](https://bleak.readthedocs.io/en/latest/index.html).
+This project is forked from [grimsteel/daybetter-led-strip](https://github.com/grimsteel/daybetter-led-strip),
+originally created by **Siddhant Kameswar** ([grimsteel](https://github.com/grimsteel)).
+Credit for the original library and documented BLE protocol belongs to the
+original author. The original MIT license and copyright notice are preserved
+in [LICENSE](LICENSE).
 
-Supports P031 and P065 devices. The model is detected from the advertised
-service UUID, with the Bluetooth device name as a fallback. Existing P031
-constructor calls and UUID constants remain supported.
+## Installation and migration
 
-## Installation
+The new distribution name is **`daybetter-ble-client`**, and the import package
+is **`daybetter_ble_client`**. This intentionally changes the old
+`daybetter_led_strip` import path; class and method names remain the same:
 
-`daybetter-led-strip` is on PyPI
-
-```sh
-$ pip install daybetter-led-strip
+```python
+from daybetter_ble_client import DaybetterLedStrip
+from daybetter_ble_client.const import SUPPORTED_DISCOVERY_SERVICES
 ```
 
-### Local development
+Until the first release of this fork is published, install this checkout with
+`uv sync --locked`. Once published, install the distribution with
+`uv pip install daybetter-ble-client` (or `pip install daybetter-ble-client`).
+The upstream `daybetter-led-strip` distribution does not include this fork's
+changes.
 
-Install this checkout in an isolated environment (with [uv](https://docs.astral.sh/uv/)):
+## Local development
+
+Install [uv](https://docs.astral.sh/uv/) and run:
 
 ```sh
-uv venv --python 3.14 .venv
-uv pip install --python .venv/bin/python -e .
-source .venv/bin/activate
-python -m unittest discover -s tests -v
+uv sync --locked --all-groups
+uv run --locked pytest
+uv run --locked pytest tests/examples
+uv run --locked ruff check
+uv run --locked ruff format --check
+uv build --no-sources
 ```
 
-Use the fork checkout for P065 support; the upstream PyPI release does not
-include these changes. Enable Bluetooth and allow Bluetooth access for the app
-running Python on macOS. Close the phone app before connecting; the strip can
-accept only one BLE connection at a time.
+`.python-version` selects Python 3.15 locally. Commit `uv.lock` when changing
+dependencies; `pyproject.toml` is the only dependency manifest.
+Runtime dependencies have explicit major-version bounds: Bleak stays on 3.x
+and bleak-retry-connector stays on 4.x. A major upgrade requires changing those
+bounds deliberately; ordinary dependency updates stay within them.
+
+`./scripts/test.sh` runs the library/release-tool tests with branch coverage and
+then the example tests. Coverage must be at least 95%; reports are written to
+`logs/`. Both CI tests and linting run on Python 3.11, 3.12, 3.13, 3.14,
+and 3.15. `./scripts/lint.sh` additionally checks shell and YAML files, requiring
+`shellcheck`, `shfmt`, and `yamllint` on PATH. See [testing](docs/TESTING.md) and
+[releases](docs/RELEASING.md) for the full workflow.
+
+The repository uses `src/daybetter_ble_client/` for the library, `tests/` for
+offline tests, `tests/examples/` for example tests, `examples/` for runnable
+programs, and `scripts/` for validation/release helpers. Tests block real BLE
+access; they do not need hardware or a PyPI account.
+
+For actual device use, enable Bluetooth and grant Bluetooth access to the app
+running Python on macOS. Close the phone app before connecting; a strip accepts
+only one BLE connection at a time.
 
 ## Usage
 
@@ -49,14 +80,16 @@ connection, and initialization failures raise an exception after cleanup.
 ```python
 import asyncio
 from bleak import BleakScanner
-from daybetter_led_strip import DaybetterLedStrip
-from daybetter_led_strip.const import SUPPORTED_DISCOVERY_SERVICES
+from daybetter_ble_client import DaybetterLedStrip
+from daybetter_ble_client.const import SUPPORTED_DISCOVERY_SERVICES
 
 # This snippet runs inside an async function. Pick one target explicitly.
 devices = await BleakScanner.discover(timeout=10, return_adv=True)
-matches = [(device, data) for device, data in devices.values()
-           if any(service in data.service_uuids
-                  for service in SUPPORTED_DISCOVERY_SERVICES)]
+matches = [
+    (device, data)
+    for device, data in devices.values()
+    if any(service in data.service_uuids for service in SUPPORTED_DISCOVERY_SERVICES)
+]
 for device, data in matches:
     print(device.name, device.address)
 if not matches:
@@ -76,7 +109,7 @@ finally:
 ```
 
 A complete example program is provided in `examples/test.py`.
-Run it with `python examples/test.py`. It cycles colors, changes brightness,
+Run it with `uv run --locked python examples/test.py`. It cycles colors, changes brightness,
 and turns the strip off. It requires exactly one supported strip to be
 discoverable to avoid changing an unintended device.
 

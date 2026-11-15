@@ -1,11 +1,11 @@
 import asyncio
 import logging
-from typing import cast, Callable
+from typing import Callable, cast
 
 from bleak import BleakClient
 from bleak.backends.characteristic import BleakGATTCharacteristic
-from bleak.backends.scanner import AdvertisementData
 from bleak.backends.device import BLEDevice
+from bleak.backends.scanner import AdvertisementData
 from bleak.exc import BleakError
 from bleak_retry_connector import BleakClientWithServiceCache, establish_connection
 
@@ -19,12 +19,13 @@ from .const import (
     SERVICE_GENERIC_ACCESS_PROFILE,
     Effect,
 )
-from .util import correct_color, modbus, RgbColor
+from .util import RgbColor, correct_color, modbus
 
 _LOGGER = logging.getLogger(__name__)
 
 Listener = Callable[[], None]
 HANDSHAKE_TIMEOUT = 5.0
+
 
 class DaybetterLedStrip:
     """Control a Daybetter RGB LED strip over Bluetooth Low Energy. Uses a BleakClient for the BLE connection"""
@@ -62,11 +63,17 @@ class DaybetterLedStrip:
         """Detected model; defaults to P031 until identifying data is available."""
         return self._profile.model
 
-    async def update_device(self, device: BLEDevice | None, advertisment_data: AdvertisementData | None):
+    async def update_device(
+        self, device: BLEDevice | None, advertisment_data: AdvertisementData | None
+    ):
         """Update this client with a new BLEDevice and AdvertismentData from scanning. Will attempt to connect if applicable"""
 
         if device is not None and device.address != self.address:
-            _LOGGER.warning("Updated device address %s does not match original address %s", device.address, self.address)
+            _LOGGER.warning(
+                "Updated device address %s does not match original address %s",
+                device.address,
+                self.address,
+            )
 
         if self.client is not None:
             await self.disconnect()
@@ -74,11 +81,24 @@ class DaybetterLedStrip:
         self.device = device
         self.advertisment_data = advertisment_data
 
-        services = {s.lower() for s in advertisment_data.service_uuids} if advertisment_data else set()
-        profile = next((p for p in DEVICE_PROFILES if p.discovery_service in services), None)
+        services = (
+            {s.lower() for s in advertisment_data.service_uuids}
+            if advertisment_data
+            else set()
+        )
+        profile = next(
+            (p for p in DEVICE_PROFILES if p.discovery_service in services), None
+        )
         if profile is None:
-            name = (advertisment_data.local_name if advertisment_data else None) or (device.name if device else None) or ""
-            profile = next((p for p in DEVICE_PROFILES if name.upper().startswith(p.model + "_")), None)
+            name = (
+                (advertisment_data.local_name if advertisment_data else None)
+                or (device.name if device else None)
+                or ""
+            )
+            profile = next(
+                (p for p in DEVICE_PROFILES if name.upper().startswith(p.model + "_")),
+                None,
+            )
         if profile is not None:
             self._profile = profile
 
@@ -103,14 +123,19 @@ class DaybetterLedStrip:
                 self.device,
                 self.device.name or "Unknown Device",
                 disconnected_callback=self._on_disconnected,
-                services=[SERVICE_GENERIC_ACCESS_PROFILE, self._profile.control_service],
+                services=[
+                    SERVICE_GENERIC_ACCESS_PROFILE,
+                    self._profile.control_service,
+                ],
             )
         except Exception:
             _LOGGER.exception("Could not connect to %s", self.address)
             self.client = None
             return
         try:
-            await self.client.start_notify(self._profile.status_characteristic, self._on_status_char_update)
+            await self.client.start_notify(
+                self._profile.status_characteristic, self._on_status_char_update
+            )
             self._notifying = True
             if self._profile.requires_handshake:
                 await self._authenticate()
@@ -185,14 +210,14 @@ class DaybetterLedStrip:
     async def _write_packet(self, command: int, payload: bytes):
         # leading byte + command + length + payload + checksum not included
         length = 3 + len(payload)
-        full_payload = bytes([0xA0, command & 0xff, length & 0xff]) + payload
+        full_payload = bytes([0xA0, command & 0xFF, length & 0xFF]) + payload
         full_payload += modbus(full_payload)  # checksum
 
         await cast(BleakClient, self.client).write_gatt_char(
             self._profile.write_characteristic, full_payload, response=True
         )
 
-    async def set_color(self, new_color: RgbColor, color_correction = True):
+    async def set_color(self, new_color: RgbColor, color_correction=True):
         """Attempt to configure the current color of the lights. Will not turn on if currently off"""
 
         r, g, b = new_color
@@ -219,7 +244,7 @@ class DaybetterLedStrip:
 
     async def set_effect(self, effect: Effect):
         """Attempt to put the light into one of the preset effect modes."""
-        payload = bytes([effect.value & 0xff]) + self._profile.variant
+        payload = bytes([effect.value & 0xFF]) + self._profile.variant
         self.pending_effect = effect
         await self._write_led_control(COMMAND_EFFECT, payload)
 
@@ -231,12 +256,17 @@ class DaybetterLedStrip:
         self.pending_power = on
         await self._write_led_control(COMMAND_POWER, payload)
 
-    async def _on_status_char_update(self, _char: BleakGATTCharacteristic, data: bytearray):
+    async def _on_status_char_update(
+        self, _char: BleakGATTCharacteristic, data: bytearray
+    ):
         if self._handshake_reply is not None and not self._handshake_reply.done():
-            if (len(data) >= 5 and data[0] == 0xA1
-                    and data[1] == self._handshake_command
-                    and len(data) == data[2] + 2
-                    and modbus(data[:-2]) == data[-2:]):
+            if (
+                len(data) >= 5
+                and data[0] == 0xA1
+                and data[1] == self._handshake_command
+                and len(data) == data[2] + 2
+                and modbus(data[:-2]) == data[-2:]
+            ):
                 self._handshake_reply.set_result(bytes(data[3:-2]))
             return
         # power change - sent when changed from IR remote
@@ -287,7 +317,9 @@ class DaybetterLedStrip:
         self._authenticated = False
         self._notifying = False
         if self._handshake_reply is not None and not self._handshake_reply.done():
-            self._handshake_reply.set_exception(BleakError("Disconnected during Daybetter handshake"))
+            self._handshake_reply.set_exception(
+                BleakError("Disconnected during Daybetter handshake")
+            )
         self._trigger_listeners()
 
     def on_change(self, listener: Listener):
@@ -307,8 +339,11 @@ class DaybetterLedStrip:
 
     @property
     def connected(self) -> bool:
-        return (self.client is not None and self.client.is_connected
-                and (not self._profile.requires_handshake or self._authenticated))
+        return (
+            self.client is not None
+            and self.client.is_connected
+            and (not self._profile.requires_handshake or self._authenticated)
+        )
 
     @property
     def rssi(self) -> int | None:
