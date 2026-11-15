@@ -7,6 +7,10 @@
 
 Python package to control Daybetter RGB LED strips over BLE. Uses [`bleak`](https://bleak.readthedocs.io/en/latest/index.html).
 
+Supports P031 and P065 devices. The model is detected from the advertised
+service UUID, with the Bluetooth device name as a fallback. Existing P031
+constructor calls and UUID constants remain supported.
+
 ## Installation
 
 `daybetter-led-strip` is on PyPI
@@ -15,33 +19,66 @@ Python package to control Daybetter RGB LED strips over BLE. Uses [`bleak`](http
 $ pip install daybetter-led-strip
 ```
 
+### Local development
+
+Install this checkout in an isolated environment (with [uv](https://docs.astral.sh/uv/)):
+
+```sh
+uv venv --python 3.14 .venv
+uv pip install --python .venv/bin/python -e .
+source .venv/bin/activate
+python -m unittest discover -s tests -v
+```
+
+Use the fork checkout for P065 support; the upstream PyPI release does not
+include these changes. Enable Bluetooth and allow Bluetooth access for the app
+running Python on macOS. Close the phone app before connecting; the strip can
+accept only one BLE connection at a time.
+
 ## Usage
 
-The `DaybetterLedStrip` constructor only requires the device MAC address. After that, the actual underlying device and advertisment data can be updated any number of times using `.update_device`. If the device disconnects for any reason, it will not reconnect.
+The `DaybetterLedStrip` constructor only requires the device address (a UUID on
+macOS, a MAC address on other platforms). Pass the scanned device and its
+advertisement data to `.update_device` for automatic model selection. The
+detected model is available as `.model`. If identifying data is unavailable,
+the compatibility default is P031. If the device disconnects, it will not
+automatically reconnect; call `.update_device` again with a freshly scanned
+device, or `.connect` to retry the stored device. P065 authenticates on every
+connection, and initialization failures raise an exception after cleanup.
 
 ```python
+import asyncio
 from bleak import BleakScanner
 from daybetter_led_strip import DaybetterLedStrip
-from daybetter_led_strip.const import SERVICE_DISCOVERY
+from daybetter_led_strip.const import SUPPORTED_DISCOVERY_SERVICES
 
-device = await BleakScanner.find_device_by_filter(lambda _device, data: SERVICE_DISCOVERY in data.service_uuids)
-    
+# This snippet runs inside an async function. Pick one target explicitly.
+devices = await BleakScanner.discover(timeout=10, return_adv=True)
+matches = [(device, data) for device, data in devices.values()
+           if any(service in data.service_uuids
+                  for service in SUPPORTED_DISCOVERY_SERVICES)]
+for device, data in matches:
+    print(device.name, device.address)
+if not matches:
+    raise RuntimeError("No supported strip found")
+device, data = matches[0]  # choose the intended strip if several are found
 led_strip = DaybetterLedStrip(device.address)
-await led_strip.update_device(device, None)
-
-# turn on
-await led_strip.set_power(True)
-
-await asyncio.sleep(1)
-
-await led_strip.set_color((255, 0, 0))
-
-await led_strip.set_power(False)
-# Must be called when done using
-await led_strip.disconnect()
+try:
+    await led_strip.update_device(device, data)
+    if not led_strip.connected:
+        raise RuntimeError("Could not connect to strip")
+    await led_strip.set_power(True)
+    await led_strip.set_color((255, 0, 0))
+    await asyncio.sleep(1)
+    await led_strip.set_power(False)
+finally:
+    await led_strip.disconnect()
 ```
 
 A complete example program is provided in `examples/test.py`.
+Run it with `python examples/test.py`. It cycles colors, changes brightness,
+and turns the strip off. It requires exactly one supported strip to be
+discoverable to avoid changing an unintended device.
 
 This package was created [for use in Home Assistant](https://github.com/grimsteel/homeassistant-daybetter-led-strip), which may explain some of the API choices.
 
@@ -52,6 +89,29 @@ Communication with the LED strip is done over BLE.
 The light strip exposes two services: the generic access profile w/ the device name, and a custom "LED control service" (`0xe031`).
 
 During discovery, the device also advertises itself with a third service (`0xc031`) for identification.
+
+P065 uses the equivalent UUIDs `0xc065` (discovery), `0xe065` (control
+service), `0xa065` (write), and `0xf065` (status notifications).
+
+### P065 connection initialization
+
+After subscribing to notifications, P065 requires a two-step handshake before
+control commands take effect. Send command `0x00` with `CCHIP`; the response
+contains `CCHIP` and two device-specific bytes. Echo that complete seven-byte
+payload with command `0x01`. A six-byte reply ending in `0x01` indicates success.
+The library validates framing and CRC and waits up to five seconds for each
+response. It disconnects if initialization fails. Do not hard-code the two
+device-specific bytes from another strip.
+
+P065 color commands append `0xff` after the RGB bytes, and effect commands
+append `0xff` after the effect ID. P031 payloads retain their existing format.
+An acknowledgement only confirms receipt; it does not prove a visible change.
+
+Validation on a physical P065 covered handshake/reconnect, RGB color, brightness,
+power, and `FADE_RED_GREEN`, with settings checked through status reads. Other
+effect IDs have not been individually tested. P031's original command format is
+covered by regression tests; a fresh P031 hardware check could not be completed
+during this change because the device was not consistently discoverable.
 
 The LED control service has a read characteristic (`0xf031`) and a write characteristic (`0xa031`). As far as I can tell, the read characteristic cannot actually be read directly. Rather, if notifications are enabled on this service, the device will push updates about its state at various times.
 

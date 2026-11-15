@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from enum import IntEnum, unique
 
 from bleak.uuids import normalize_uuid_16
@@ -15,6 +16,25 @@ CHAR_LED_STATUS = normalize_uuid_16(0xf031)
 
 # Advertised service
 SERVICE_DISCOVERY = normalize_uuid_16(0xc031)
+
+
+@dataclass(frozen=True)
+class DeviceProfile:
+    model: str
+    discovery_service: str
+    control_service: str
+    write_characteristic: str
+    status_characteristic: str
+    requires_handshake: bool = False
+    variant: bytes = b""
+
+
+P031 = DeviceProfile("P031", SERVICE_DISCOVERY, SERVICE_LED_CONTROL,
+                     CHAR_LED_CONTROL, CHAR_LED_STATUS)
+P065 = DeviceProfile("P065", normalize_uuid_16(0xc065), normalize_uuid_16(0xe065),
+                     normalize_uuid_16(0xa065), normalize_uuid_16(0xf065), True, b"\xff")
+DEVICE_PROFILES = (P031, P065)
+SUPPORTED_DISCOVERY_SERVICES = tuple(p.discovery_service for p in DEVICE_PROFILES)
 
 # GATT command ID
 COMMAND_BRIGHTNESS = 0x13
