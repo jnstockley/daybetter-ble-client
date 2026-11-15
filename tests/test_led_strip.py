@@ -9,6 +9,7 @@ from bleak.backends.scanner import AdvertisementData
 from bleak.exc import BleakError
 
 from daybetter_ble_client import DaybetterLedStrip, const
+from daybetter_ble_client.util import modbus
 
 P031_WRITE = "0000a031-0000-1000-8000-00805f9b34fb"
 P065_WRITE = "0000a065-0000-1000-8000-00805f9b34fb"
@@ -63,6 +64,12 @@ class FakeClient:
                 if self.auth == "valid"
                 else "a1 01 09 43 43 48 49 50 00 16 e1"
             )
+        elif data[1] == 0x10:
+            # Synthetic static red/100% snapshot using the documented layout.
+            reply = "a1 10 11 01 01 ff 64 32 32 ff 00 00 00 00 00 00 00"
+            raw = bytes.fromhex(reply)
+            await self.callback(None, bytearray(raw + modbus(raw)))
+            return
         else:
             reply = None
         if reply:
@@ -92,7 +99,11 @@ class StripTests(unittest.IsolatedAsyncioTestCase):
         strip, client = await self.attach(name="Unknown")
         await strip.set_color((255, 0, 0))
         self.assertEqual(
-            client.writes, [(P031_WRITE, bytes.fromhex("a0 15 06 ff 00 00 25 c0"))]
+            client.writes,
+            [
+                (P031_WRITE, bytes.fromhex("a0 10 04 00 21 21")),
+                (P031_WRITE, bytes.fromhex("a0 15 06 ff 00 00 25 c0")),
+            ],
         )
         await strip.disconnect()
 
@@ -137,6 +148,7 @@ class StripTests(unittest.IsolatedAsyncioTestCase):
             [
                 (P065_WRITE, bytes.fromhex("a0 00 08 43 43 48 49 50 ac ca")),
                 (P065_WRITE, bytes.fromhex("a0 01 0a 43 43 48 49 50 14 0b 3f d9")),
+                (P065_WRITE, bytes.fromhex("a0 10 04 00 21 21")),
                 (P065_WRITE, bytes.fromhex("a0 15 07 ff 00 00 ff 7c 5b")),
             ],
         )
@@ -194,7 +206,7 @@ class StripTests(unittest.IsolatedAsyncioTestCase):
             await strip.update_device(BLEDevice("test-address", "P065_fc58", {}), None)
         self.assertFalse(old.is_connected)
         self.assertTrue(strip.connected)
-        self.assertEqual([p[1] for _, p in new.writes], [0, 1])
+        self.assertEqual([p[1] for _, p in new.writes], [0, 1, 0x10])
         await strip.disconnect()
 
     async def test_handshake_timeout_includes_stalled_write(self):
