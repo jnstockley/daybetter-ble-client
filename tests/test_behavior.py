@@ -4,12 +4,12 @@ import asyncio
 from unittest.mock import AsyncMock
 
 import pytest
-from bleak.backends.device import BLEDevice
 from bleak.exc import BleakError
 
 from daybetter_ble_client import DaybetterLedStrip, led_strip
 from daybetter_ble_client.const import Effect
 from daybetter_ble_client.util import correct_color, modbus
+from tests.devices import make_device
 from tests.test_led_strip import FakeClient, advertisement
 
 
@@ -185,7 +185,7 @@ def test_model_and_rssi_use_discovery_data(run_async, monkeypatch):
     connect = AsyncMock()
     monkeypatch.setattr(strip, "connect", connect)
     data = advertisement(name="p065_test")
-    run_async(strip.update_device(BLEDevice("device", None, {}), data))
+    run_async(strip.update_device(make_device("device", None, {}), data))
     assert strip.model == "P065"
     assert strip.rssi == -66
 
@@ -195,7 +195,7 @@ def test_update_without_device_and_address_mismatch(run_async, monkeypatch, capl
     monkeypatch.setattr(strip, "connect", AsyncMock())
     run_async(strip.update_device(None, None))
     assert strip.device is None
-    run_async(strip.update_device(BLEDevice("other", "P031_test", {}), None))
+    run_async(strip.update_device(make_device("other", "P031_test", {}), None))
     assert "does not match" in caplog.text
 
 
@@ -206,7 +206,7 @@ def test_connect_without_device_and_redundant_connect_are_noops(
     monkeypatch.setattr(led_strip, "establish_connection", factory)
     run_async(DaybetterLedStrip("device").connect())
     strip, client = connected
-    strip.device = BLEDevice("device", "P031_test", {})
+    strip.device = make_device("device", "P031_test", {})
     run_async(strip.connect())
     assert client.writes == []
     factory.assert_not_awaited()
@@ -219,7 +219,7 @@ def test_connection_failure_is_logged_and_cleared(run_async, monkeypatch, caplog
         "establish_connection",
         AsyncMock(side_effect=BleakError("unreachable")),
     )
-    run_async(strip.update_device(BLEDevice("device", None, {}), None))
+    run_async(strip.update_device(make_device("device", None, {}), None))
     assert not strip.connected
     assert strip.client is None
     assert "unreachable" in caplog.text
@@ -261,7 +261,7 @@ def test_handshake_cancellation_cleans_up_and_propagates(run_async, monkeypatch)
         monkeypatch.setattr(led_strip, "establish_connection", factory)
         strip = DaybetterLedStrip("device")
         task = asyncio.create_task(
-            strip.update_device(BLEDevice("device", "P065_test", {}), None)
+            strip.update_device(make_device("device", "P065_test", {}), None)
         )
         await ready.wait()
         assert not strip.connected
@@ -289,7 +289,7 @@ def test_malformed_handshake_challenge_is_rejected(run_async, monkeypatch):
         )
         strip = DaybetterLedStrip("device")
         with pytest.raises(BleakError, match="Invalid Daybetter"):
-            await strip.update_device(BLEDevice("device", "P065_test", {}), None)
+            await strip.update_device(make_device("device", "P065_test", {}), None)
         assert strip.client is None
         assert not client.is_connected
 
@@ -305,7 +305,7 @@ def test_handshake_write_error_cleans_up_pending_future(run_async, monkeypatch):
         )
         strip = DaybetterLedStrip("device")
         with pytest.raises(BleakError, match="GATT write failed"):
-            await strip.update_device(BLEDevice("device", "P065_test", {}), None)
+            await strip.update_device(make_device("device", "P065_test", {}), None)
         assert strip._handshake_reply is None
         assert not client.is_connected
 

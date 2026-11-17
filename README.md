@@ -46,9 +46,14 @@ uv build --no-sources
 
 `.python-version` selects Python 3.15 locally. Commit `uv.lock` when changing
 dependencies; `pyproject.toml` is the only dependency manifest.
-Runtime dependencies have explicit major-version bounds: Bleak stays on 3.x
-and bleak-retry-connector stays on 4.x. A major upgrade requires changing those
-bounds deliberately; ordinary dependency updates stay within them.
+Runtime dependencies allow `bleak>=0.21.0,<4` and
+`bleak-retry-connector>=3.1.3,<5` so applications can share older compatible
+versions. Bleak 0.21 introduced the UUID helper used by this library; connector
+3.1.3 fixed timeouts on Python 3.11. Dependency metadata may require newer
+versions on newer Python releases. The upper bounds exclude the next major
+versions; raising them requires a deliberate compatibility review.
+The lockfile pins development dependencies and does not pin dependencies in
+applications that install the library.
 
 `./scripts/test.sh` runs the library/release-tool tests with branch coverage and
 then the example tests. Coverage must be at least 95%; reports are written to

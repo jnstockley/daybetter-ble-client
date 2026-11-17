@@ -4,12 +4,12 @@ import asyncio
 from unittest.mock import AsyncMock
 
 import pytest
-from bleak.backends.device import BLEDevice
 from bleak.exc import BleakError
 
 from daybetter_ble_client import DaybetterLedStrip, led_strip
 from daybetter_ble_client.const import P031, P065, Effect
 from daybetter_ble_client.util import modbus
+from tests.devices import make_device
 from tests.test_led_strip import FakeClient
 
 # P065 capture used by the earlier power-only test: FADE_RED_GREEN, 100%.
@@ -120,7 +120,7 @@ def test_connect_obtains_initial_state_and_refresh_reads_again(
         factory = AsyncMock(return_value=client)
         monkeypatch.setattr(led_strip, "establish_connection", factory)
         await strip.update_device(
-            BLEDevice("device", profile.model + "_test", {}), None
+            make_device("device", profile.model + "_test", {}), None
         )
         assert strip.power is True
         assert strip.brightness == 100
@@ -305,7 +305,7 @@ def test_initial_refresh_failure_disconnects(run_async, monkeypatch):
         )
         strip = DaybetterLedStrip("device")
         with pytest.raises(BleakError, match="status read failed"):
-            await strip.update_device(BLEDevice("device", "P065_test", {}), None)
+            await strip.update_device(make_device("device", "P065_test", {}), None)
         assert not strip.connected
         assert not client.is_connected
 
@@ -321,7 +321,7 @@ def test_reconnect_ignores_old_notifications_and_clears_pending_commands(
         monkeypatch.setattr(
             led_strip, "establish_connection", AsyncMock(return_value=old)
         )
-        await strip.update_device(BLEDevice("device", "P031_test", {}), None)
+        await strip.update_device(make_device("device", "P031_test", {}), None)
         await strip.set_brightness(20)
         assert strip.pending_brightness == 20
         await strip.disconnect()

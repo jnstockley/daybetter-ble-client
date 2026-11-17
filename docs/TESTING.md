@@ -4,6 +4,13 @@ Use `uv sync --locked --all-groups` to install exactly the committed lockfile.
 The local Python pin is 3.15; CI runs tests and linting on Python 3.11, 3.12,
 3.13, 3.14 and 3.15. CI sets `UV_PYTHON` for every matrix job so helper scripts use the
 selected interpreter rather than the local `.python-version` pin.
+CI also resolves the lowest direct dependency versions on Python 3.11
+with `uv sync --all-groups --resolution lowest-direct` and runs
+both offline suites with the same coverage gate. The job sets
+`UV_RESOLUTION=lowest-direct` for subsequent locked commands too.
+This updates the lockfile in that CI job only; the committed lockfile keeps
+the normal development versions. The minimum versions are tested on Python
+3.11 because older dependencies may not support newer Python releases.
 `uv run --locked --python 3.11 pytest` can select another supported Python
 locally; uv may install that interpreter or recreate the project environment.
 

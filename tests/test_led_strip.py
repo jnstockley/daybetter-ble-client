@@ -4,12 +4,12 @@ import asyncio
 import unittest
 from unittest.mock import patch
 
-from bleak.backends.device import BLEDevice
 from bleak.backends.scanner import AdvertisementData
 from bleak.exc import BleakError
 
 from daybetter_ble_client import DaybetterLedStrip, const
 from daybetter_ble_client.util import modbus
+from tests.devices import make_device
 
 P031_WRITE = "0000a031-0000-1000-8000-00805f9b34fb"
 P065_WRITE = "0000a065-0000-1000-8000-00805f9b34fb"
@@ -92,7 +92,7 @@ class StripTests(unittest.IsolatedAsyncioTestCase):
             return client
 
         with patch("daybetter_ble_client.led_strip.establish_connection", establish):
-            await strip.update_device(BLEDevice("test-address", name, {}), adv)
+            await strip.update_device(make_device("test-address", name, {}), adv)
         return strip, client
 
     async def test_p031_default_retains_original_red_packet(self):
@@ -203,7 +203,9 @@ class StripTests(unittest.IsolatedAsyncioTestCase):
             return new
 
         with patch("daybetter_ble_client.led_strip.establish_connection", establish):
-            await strip.update_device(BLEDevice("test-address", "P065_fc58", {}), None)
+            await strip.update_device(
+                make_device("test-address", "P065_fc58", {}), None
+            )
         self.assertFalse(old.is_connected)
         self.assertTrue(strip.connected)
         self.assertEqual([p[1] for _, p in new.writes], [0, 1, 0x10])
@@ -244,7 +246,9 @@ class StripTests(unittest.IsolatedAsyncioTestCase):
             return new
 
         with patch("daybetter_ble_client.led_strip.establish_connection", establish):
-            await strip.update_device(BLEDevice("test-address", "P065_fc58", {}), None)
+            await strip.update_device(
+                make_device("test-address", "P065_fc58", {}), None
+            )
         old.disconnected_callback(old)
         self.assertTrue(
             strip.connected, "Stale callback must not discard the new connection"
