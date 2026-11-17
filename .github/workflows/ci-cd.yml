@@ -68,6 +68,25 @@ jobs:
           name: test-reports-${{ matrix.python-version }}
           path: logs/
 
+  minimum-dependencies:
+    name: Minimum dependencies / Python 3.11
+    runs-on: ubuntu-latest
+    env:
+      UV_PYTHON: '3.11'
+      UV_RESOLUTION: lowest-direct
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - name: Resolve the lowest direct dependency versions
+        run: uv sync --all-groups --resolution lowest-direct
+      - run: ./scripts/test.sh
+
   build:
     name: Build and install distributions
     runs-on: ubuntu-latest
@@ -106,7 +125,7 @@ jobs:
   pypi-publish:
     name: Publish to PyPI
     if: github.event_name == 'release'
-    needs: [lint, test, build]
+    needs: [lint, test, minimum-dependencies, build]
     runs-on: ubuntu-latest
     environment:
       name: pypi

@@ -5,9 +5,9 @@ from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
-from bleak.backends.device import BLEDevice
 
 from daybetter_ble_client.const import P031, P065
+from tests.devices import make_device
 from tests.test_led_strip import advertisement
 
 
@@ -44,7 +44,7 @@ class FakeStrip:
 
 def devices(*services):
     return {
-        str(i): (BLEDevice(str(i), f"P065_test{i}", {}), advertisement(service))
+        str(i): (make_device(str(i), f"P065_test{i}", {}), advertisement(service))
         for i, service in enumerate(services)
     }
 
