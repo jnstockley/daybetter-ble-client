@@ -149,6 +149,53 @@ def test_refresh_requires_connection(run_async):
         run_async(DaybetterLedStrip("device").async_refresh_state())
 
 
+def test_refresh_raises_disconnect_cause_from_callback(run_async):
+    async def scenario():
+        strip, client = attached()
+        cause = BleakError("remote disconnect")
+        started = asyncio.Event()
+
+        async def write(*_args, **_kwargs):
+            started.set()
+            await asyncio.Event().wait()
+
+        client.write_gatt_char = write
+        refresh = asyncio.create_task(strip.async_refresh_state())
+        await started.wait()
+        client.disconnected_callback(client, cause)
+        with pytest.raises(BleakError) as raised:
+            await refresh
+        assert raised.value is cause
+        assert strip.disconnect_reason is cause
+
+    run_async(scenario())
+
+
+def test_refresh_preserves_gatt_write_exception(run_async):
+    async def scenario():
+        strip, client = attached()
+        cause = BleakError("GATT write failed")
+
+        async def write(*_args, **_kwargs):
+            raise cause
+
+        client.write_gatt_char = write
+        with pytest.raises(BleakError) as raised:
+            await strip.async_refresh_state()
+        assert raised.value is cause
+
+    run_async(scenario())
+
+
+def test_disconnect_callback_cause_is_available_without_pending_refresh():
+    strip, client = attached()
+    cause = BleakError("transport disconnected")
+
+    strip._on_disconnected(client, cause)
+
+    assert strip.disconnect_reason is cause
+
+
 @pytest.mark.parametrize("failure", ["missing", "stalled", "write", "corrupt"])
 def test_refresh_failure_propagates_and_allows_retry(run_async, failure):
     async def scenario():

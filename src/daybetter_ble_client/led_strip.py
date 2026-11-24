@@ -67,6 +67,7 @@ class DaybetterLedStrip:
         self.effect_id: int | None = None
         self.raw_status: bytes | None = None
         self.last_state_update: float | None = None
+        self.disconnect_reason: BaseException | None = None
         self.listeners = []
         self._profile = P031
         self._authenticated = False
@@ -74,7 +75,7 @@ class DaybetterLedStrip:
         self._handshake_reply: asyncio.Future[bytes] | None = None
         self._handshake_command: int | None = None
         self._status_reply: asyncio.Future[None] | None = None
-        self._status_disconnected: asyncio.Future[None] | None = None
+        self._status_disconnected: asyncio.Future[BaseException] | None = None
         self._operation_lock = asyncio.Lock()
         self._connect_lock = asyncio.Lock()
 
@@ -139,6 +140,7 @@ class DaybetterLedStrip:
         if self.connected:
             return
         self._authenticated = False
+        self.disconnect_reason = None
 
         try:
             self.client = await establish_connection(
@@ -185,7 +187,7 @@ class DaybetterLedStrip:
                 if not self.connected:
                     raise BleakError("Cannot refresh state: not connected to device")
                 reply: asyncio.Future[None] = asyncio.get_running_loop().create_future()
-                disconnected: asyncio.Future[None] = (
+                disconnected: asyncio.Future[BaseException] = (
                     asyncio.get_running_loop().create_future()
                 )
                 self._status_reply = reply
@@ -200,7 +202,7 @@ class DaybetterLedStrip:
                         (exchange, disconnected), return_when=asyncio.FIRST_COMPLETED
                     )
                     if disconnected.done():
-                        raise BleakError("Disconnected during Daybetter state refresh")
+                        raise disconnected.result()
                     await exchange
                 finally:
                     self._status_reply = None
@@ -215,17 +217,23 @@ class DaybetterLedStrip:
                         exchange, write, reply, disconnected, return_exceptions=True
                     )
 
-    def _fail_pending(self):
+    def _fail_pending(self, reason: BaseException | None = None):
         """Release in-flight exchanges and discard commands from this session."""
         if (
             self._status_disconnected is not None
             and not self._status_disconnected.done()
         ):
-            self._status_disconnected.set_result(None)
+            self._status_disconnected.set_result(
+                reason
+                if reason is not None
+                else BleakError("Disconnected during Daybetter state refresh")
+            )
         for reply in (self._handshake_reply, self._status_reply):
             if reply is not None and not reply.done():
                 reply.set_exception(
-                    BleakError("Disconnected during Daybetter exchange")
+                    reason
+                    if reason is not None
+                    else BleakError("Disconnected during Daybetter exchange")
                 )
         self.pending_power = None
         self.pending_brightness = None
@@ -429,16 +437,19 @@ class DaybetterLedStrip:
                     self.effect_id = 1
                     self._trigger_listeners()
 
-    def _on_disconnected(self, _old_client: BleakClient):
+    def _on_disconnected(
+        self, _old_client: BleakClient, reason: BaseException | None = None
+    ):
         if self.client is not _old_client:
             return
+        self.disconnect_reason = reason
         _LOGGER.warning("Device disconnected")
 
         # not async - can't do much here
         self.client = None
         self._authenticated = False
         self._notifying = False
-        self._fail_pending()
+        self._fail_pending(reason)
         self._trigger_listeners()
 
     def on_change(self, listener: Listener):
